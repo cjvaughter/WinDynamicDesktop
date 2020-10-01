@@ -183,7 +183,7 @@ namespace WinDynamicDesktop
                 JsonConfig.settings.sunriseTime = sunriseTimePicker.Value.ToLongTimeString();
                 JsonConfig.settings.sunsetTime = sunsetTimePicker.Value.ToLongTimeString();
                 JsonConfig.settings.sunriseSunsetDuration = (int)sunriseSunsetDurationBox.Value;
-                this.Close();
+                HandleScheduleChange();
             }
 
             okButton.Enabled = true;

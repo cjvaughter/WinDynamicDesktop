@@ -15,7 +15,7 @@ namespace WinDynamicDesktop.WPF
 
         public ThemePreviewer()
         {
-            ViewModel = new ThemePreviewerViewModel(StartAnimation, StopAnimation);
+            ViewModel = new ThemePreviewerViewModel(StartAnimation, StopAnimation, SetSpeed);
             DataContext = ViewModel;
 
             InitializeComponent();
@@ -45,6 +45,11 @@ namespace WinDynamicDesktop.WPF
         private void StopAnimation()
         {
             fadeAnimation.Stop(FrontImage);
+        }
+
+        private void SetSpeed(double speed)
+        {
+            fadeAnimation.SetSpeedRatio(FrontImage, speed);
         }
     }
 }

@@ -32,7 +32,7 @@ namespace WinDynamicDesktop
         public int imageId2;
         public long startTick;
         public long endTick;
-        public float lastPercent;
+        public double lastPercent;
     }
 
     class WallpaperChangeScheduler
@@ -42,7 +42,6 @@ namespace WinDynamicDesktop
         private string lastImagePath;
         private DateTime? nextUpdateTime;
 
-        public static bool isSunUp;
         public FullScreenApi fullScreenChecker;
 
         private Timer backgroundTimer = new Timer();
@@ -66,6 +65,11 @@ namespace WinDynamicDesktop
             SystemEvents.TimeChanged += OnTimeChanged;
         }
 
+        public static bool IsSunUp(SolarData data, DateTime current)
+        {
+            return (data.sunriseTime <= current && current < data.sunsetTime);
+        }
+
         public void RunScheduler(bool forceImageUpdate = false)
         {
             if (!LaunchSequence.IsLocationReady() || !LaunchSequence.IsThemeReady())
@@ -76,7 +80,7 @@ namespace WinDynamicDesktop
             schedulerTimer.Stop();
 
             SolarData data = SunriseSunsetService.GetSolarData(DateTime.Today);
-            isSunUp = (data.sunriseTime <= DateTime.Now && DateTime.Now < data.sunsetTime);
+            bool isSunUp = IsSunUp(data, DateTime.Now);
             DateTime? nextImageUpdateTime = null;
 
             if (ThemeManager.currentTheme != null)
@@ -97,7 +101,7 @@ namespace WinDynamicDesktop
 
                 if (JsonConfig.settings.enableInterpolation)
                 {
-                    SchedulerState nextImageData = GetImageData(data, ThemeManager.currentTheme, nextImageUpdateTime.Value);
+                    SchedulerState nextImageData = GetImageData(data, ThemeManager.currentTheme, nextImageUpdateTime.Value + TimeSpan.FromSeconds(1));
 
                     lock (interpolationLock)
                     {
@@ -107,9 +111,8 @@ namespace WinDynamicDesktop
                         interpolation.startTick = imageData.startTick;
                         interpolation.endTick = imageData.endTick;
                         lastImagePath = null;
+                        UpdateInterpolation();
                     }
-
-                    UpdateInterpolation();
                 }
                 else
                 {
@@ -168,12 +171,7 @@ namespace WinDynamicDesktop
             RunScheduler();
         }
 
-        private static DaySegment GetCurrentDaySegment(SolarData data)
-        {
-            return GetDaySegment(data, DateTime.Now);
-        }
-
-        private static DaySegment GetDaySegment(SolarData data, DateTime time)
+        public static DaySegment GetDaySegment(SolarData data, DateTime time)
         {
             if (data.polarPeriod == PolarPeriod.PolarDay)
             {
@@ -206,6 +204,8 @@ namespace WinDynamicDesktop
             int[] imageList = null;
             DateTime segmentStart;
             DateTime segmentEnd;
+            bool isSunUp = IsSunUp(data, current);
+
             SchedulerState imageData = new SchedulerState() { daySegment2 = isSunUp ? 0 : 1 };
 
             if (!JsonConfig.settings.darkMode)
@@ -322,23 +322,38 @@ namespace WinDynamicDesktop
             lastImagePath = imagePath;
         }
 
-        private void SetWallpaper(int imageId1, int imageId2, float percent)
+        private void SetWallpaper(int imageId1, int imageId2, double percent)
         {
             string imageFilename1 = ThemeManager.currentTheme.imageFilename.Replace("*", imageId1.ToString());
             string imageFilename2 = ThemeManager.currentTheme.imageFilename.Replace("*", imageId2.ToString());
 
-            string imagePath1 = Path.Combine(Directory.GetCurrentDirectory(), "themes",
-                ThemeManager.currentTheme.themeId, imageFilename1);
-            string imagePath2 = Path.Combine(Directory.GetCurrentDirectory(), "themes",
-                ThemeManager.currentTheme.themeId, imageFilename2);
+            string folder = Path.Combine(Directory.GetCurrentDirectory(), "themes", ThemeManager.currentTheme.themeId);
+            string imagePath1 = Path.Combine(folder, imageFilename1);
+            string imagePath2 = Path.Combine(folder, imageFilename2);
+            string outputPath = Path.Combine(folder, "current.jpg");
 
-            string outputPath = Path.Combine(Directory.GetCurrentDirectory(), "themes",
-                ThemeManager.currentTheme.themeId, "current.jpg");
+            Task.Run(() =>
+            {
+                var sw = new System.Diagnostics.Stopwatch();
 
-            CreateInterpolatedImage(imagePath1, imagePath2, outputPath, percent);
+                sw.Restart();
+                using (var image1 = new ImageMagick.MagickImage(imagePath1))
+                using (var image2 = new ImageMagick.MagickImage(imagePath2))
+                {
+                    image1.Quality = 98;
+                    image1.Composite(image2, ImageMagick.CompositeOperator.Blend, Math.Round(percent * 100).ToString());
+                    image1.Write(outputPath);
+                }
+                sw.Stop();
+                Console.WriteLine($"NEW: {sw.ElapsedMilliseconds}");
 
-            WallpaperApi.EnableTransitions();
-            UwpDesktop.GetHelper().SetWallpaper("current.jpg");
+                GC.Collect();
+
+                WallpaperApi.EnableTransitions();
+                UwpDesktop.GetHelper().SetWallpaper("current.jpg");
+            });
+
+            lastImagePath = outputPath;
         }
 
         private void UpdateInterpolation()
@@ -347,27 +362,38 @@ namespace WinDynamicDesktop
             {
                 if (ThemeManager.currentTheme == null)
                 {
+                    Console.WriteLine("I: null");
+                    return;
+                }
+                else if (interpolation.imageId1 == interpolation.imageId2)
+                {
+                    Console.WriteLine($"I: {interpolation.imageId1} == {interpolation.imageId2}");
+                    SetWallpaper(interpolation.imageId1);
                     return;
                 }
 
                 long total = interpolation.endTick - interpolation.startTick;
                 long current = DateTime.Now.Ticks - interpolation.startTick;
-                float percent = Interpolation.Calculate((float)current / total, ThemeManager.currentTheme.interpolation);
+                double percent = Interpolation.Calculate((double)current / total, ThemeManager.currentTheme.interpolation);
 
                 if (percent - interpolation.lastPercent < 0.01f)
                 {
+                    Console.WriteLine($"I: {percent} {interpolation.imageId1} => {interpolation.imageId2} (not enough)");
                     return;
                 }
                 else if (percent == 0)
                 {
+                    Console.WriteLine($"I: 0 {interpolation.imageId1}");
                     SetWallpaper(interpolation.imageId1);
                 }
                 else if (percent == 1)
                 {
+                    Console.WriteLine($"I: 1 {interpolation.imageId2}");
                     SetWallpaper(interpolation.imageId2);
                 }
                 else
                 {
+                    Console.WriteLine($"I: {percent} {interpolation.imageId1} => {interpolation.imageId2}");
                     SetWallpaper(interpolation.imageId1, interpolation.imageId2, percent);
                 }
 
@@ -441,7 +467,7 @@ namespace WinDynamicDesktop
         {
             using (Bitmap image1 = new Bitmap(imagePath1))
             using (Bitmap image2 = new Bitmap(imagePath2))
-            using (Bitmap output = new Bitmap(image1.Width, image1.Height))
+            using (Bitmap output = new Bitmap(image1.Width, image1.Height, image1.PixelFormat))
             using (Graphics g = Graphics.FromImage(output))
             {
                 g.PixelOffsetMode = PixelOffsetMode.None;
@@ -460,6 +486,16 @@ namespace WinDynamicDesktop
 
                 output.Save(outputPath, ImageFormat.Jpeg);
             }
+        }
+
+        private static Image CloneImage(Image img)
+        {
+            Bitmap img2 = new Bitmap(img.Width, img.Height);
+            using (Graphics g = Graphics.FromImage(img2))
+            {
+                g.DrawImageUnscaled(img, 0, 0);
+            }
+            return img2;
         }
     }
 }

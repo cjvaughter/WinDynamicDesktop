@@ -17,7 +17,7 @@ namespace WinDynamicDesktop
 
     public static class Interpolation
     {
-        public static float Calculate(float value, InterpolationMethod method)
+        public static double Calculate(double value, InterpolationMethod method)
         {
             if (value < 0)
             {
@@ -60,22 +60,22 @@ namespace WinDynamicDesktop
             }
         }
 
-        private static float InOut(float value, Func<float,float> func)
+        private static double InOut(double value, Func<double, double> func)
         {
-            if (value >= 0.5f)
+            if (value >= 0.5)
             {
-                return (1 - func((1 - value) * 2)) / 2 + 0.5f;
+                return (1 - func((1 - value) * 2)) / 2 + 0.5;
 
             }
             return func(value * 2) / 2;
         }
 
-        private static float Quad(float value) => (float)Math.Pow(value, 2);
-        private static float Cubic(float value) => (float)Math.Pow(value, 3);
-        private static float Quart(float value) => (float)Math.Pow(value, 4);
-        private static float Quint(float value) => (float)Math.Pow(value, 5);
-        private static float Exponential(float value) => ((float)Math.Exp(2 * value) - 1) / ((float)Math.Exp(2) - 1);
-        private static float Sine(float value) => 1 - (float)Math.Sin(Math.PI / 2 * (1 - value));
-        private static float Circle(float value) => 1 - (float)Math.Sqrt(1.0 - value * value);
+        private static double Quad(double value) => Math.Pow(value, 2);
+        private static double Cubic(double value) => Math.Pow(value, 3);
+        private static double Quart(double value) => Math.Pow(value, 4);
+        private static double Quint(double value) => Math.Pow(value, 5);
+        private static double Exponential(double value) => (Math.Exp(2 * value) - 1) / (Math.Exp(2) - 1);
+        private static double Sine(double value) => 1 - Math.Sin(Math.PI / 2 * (1 - value));
+        private static double Circle(double value) => 1 - Math.Sqrt(1.0 - value * value);
     }
 }
